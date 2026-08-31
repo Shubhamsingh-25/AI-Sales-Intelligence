@@ -575,9 +575,17 @@ st.markdown(
 
 DATA_FILE = "Data/AI_Sales_Intelligence_Dataset.xlsx"
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
+# ============================================================
+# CLOUD AI CONFIGURATION — GOOGLE GEMINI
+# ============================================================
+# IMPORTANT: Do NOT put the API key directly in this Python file.
+# Add it in Streamlit Cloud -> App settings -> Secrets as:
+# GEMINI_API_KEY = "your_api_key_here"
 
-MODEL_NAME = "llama3.2:3b"
+GEMINI_API_URL = (
+    "https://generativelanguage.googleapis.com/v1beta/"
+    "models/gemini-2.5-flash:generateContent"
+)
 
 
 # ============================================================
@@ -649,26 +657,76 @@ target = target.merge(
 
 
 # ============================================================
-# OLLAMA FUNCTION
+# GEMINI AI FUNCTION
 # ============================================================
 
-def ask_ollama(prompt):
+def ask_ai(prompt):
+    """Send the dashboard analysis prompt to Google Gemini.
+
+    The API key is read securely from Streamlit Secrets so the
+    deployed dashboard does NOT depend on Google Gemini running on the
+    user's computer.
+    """
+
+    try:
+        api_key = st.secrets["GEMINI_API_KEY"]
+    except Exception:
+        raise RuntimeError(
+            "GEMINI_API_KEY is missing. Add GEMINI_API_KEY = \"your_key\" "
+            "in Streamlit Cloud App settings -> Secrets."
+        )
+
+    api_key = str(api_key).strip()
+
+    if not api_key:
+        raise RuntimeError(
+            "GEMINI_API_KEY is empty. Add a valid Gemini API key in Streamlit Secrets."
+        )
 
     payload = {
-        "model": MODEL_NAME,
-        "prompt": prompt,
-        "stream": False
+        "contents": [
+            {
+                "parts": [
+                    {
+                        "text": prompt
+                    }
+                ]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.2
+        }
     }
 
     response = requests.post(
-        OLLAMA_URL,
+        GEMINI_API_URL,
+        params={"key": api_key},
         json=payload,
         timeout=120
     )
 
-    response.raise_for_status()
+    if not response.ok:
+        try:
+            error_data = response.json()
+            error_message = error_data.get("error", {}).get(
+                "message",
+                response.text
+            )
+        except Exception:
+            error_message = response.text
 
-    return response.json()["response"]
+        raise RuntimeError(
+            f"Gemini API error ({response.status_code}): {error_message}"
+        )
+
+    data = response.json()
+
+    try:
+        return data["candidates"][0]["content"]["parts"][0]["text"]
+    except (KeyError, IndexError, TypeError):
+        raise RuntimeError(
+            "Gemini returned an unexpected response. Please try again."
+        )
 
 
 
@@ -729,7 +787,7 @@ st.markdown(
         <div class="hero-subtitle">
             Smart insights. Better decisions. Interactive sales performance intelligence.
         </div>
-        <div class="live-pill">● LIVE ANALYTICS &nbsp; | &nbsp; Excel + Python + Streamlit + Plotly + Ollama</div>
+        <div class="live-pill">● LIVE ANALYTICS &nbsp; | &nbsp; Excel + Python + Streamlit + Plotly + Google Gemini</div>
     </div>
     """,
     unsafe_allow_html=True
@@ -2778,7 +2836,7 @@ if st.button(
                     build_executive_brief_prompt()
                 )
 
-                executive_answer = ask_ollama(
+                executive_answer = ask_ai(
                     executive_prompt
                 )
 
@@ -2810,7 +2868,7 @@ if st.button(
             except requests.exceptions.ConnectionError:
 
                 st.error(
-                    "❌ Ollama is not running. Start Ollama and try again."
+                    "❌ Gemini AI is unavailable. Please check your Gemini API key and Streamlit Secrets."
                 )
 
             except requests.exceptions.Timeout:
@@ -2974,7 +3032,7 @@ if should_analyze:
 
         # ----------------------------------------------------
         # Format all sales context in ₹M before sending to AI.
-        # This prevents Ollama from answering with raw/scientific
+        # This prevents Google Gemini from answering with raw/scientific
         # notation such as ₹1.812879e+09.
         # ----------------------------------------------------
 
@@ -3104,7 +3162,7 @@ Explain what the data indicates.
 
             try:
 
-                answer = ask_ollama(prompt)
+                answer = ask_ai(prompt)
 
                 # Final safety formatting:
                 # Convert scientific-notation / raw ₹ sales amounts
@@ -3171,7 +3229,7 @@ Explain what the data indicates.
             except requests.exceptions.ConnectionError:
 
                 st.error(
-                    "❌ Ollama is not running. Start Ollama and try again."
+                    "❌ Gemini AI is unavailable. Please check your Gemini API key and Streamlit Secrets."
                 )
 
             except requests.exceptions.Timeout:
@@ -3199,7 +3257,7 @@ Explain what the data indicates.
 st.divider()
 
 st.markdown(
-    '<div class="footer-note">AI Sales Intelligence Dashboard • Built with ❤️ using Excel, Python, Streamlit, Plotly & Ollama</div>',
+    '<div class="footer-note">AI Sales Intelligence Dashboard • Built with ❤️ using Excel, Python, Streamlit, Plotly & Google Gemini</div>',
     unsafe_allow_html=True
 )
 
@@ -3252,7 +3310,7 @@ with export_col2:
 st.divider()
 
 st.markdown(
-    '<div class="footer-note">AI Sales Intelligence Dashboard • Built with ❤️ using Excel, Python, Streamlit, Plotly & Ollama</div>',
+    '<div class="footer-note">AI Sales Intelligence Dashboard • Built with ❤️ using Excel, Python, Streamlit, Plotly & Google Gemini</div>',
     unsafe_allow_html=True
 )
 
