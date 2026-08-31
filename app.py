@@ -660,20 +660,29 @@ target = target.merge(
 # GEMINI AI FUNCTION
 # ============================================================
 
+# Primary model + lightweight fallback. A 503 means Google's service is
+# temporarily overloaded, so we retry with exponential backoff and then
+# use the fallback model instead of showing a failure immediately.
+GEMINI_MODELS = [
+    "gemini-3.6-flash",
+    "gemini-3.1-flash-lite",
+]
+
+
 def ask_ai(prompt):
     """Send the dashboard analysis prompt to Google Gemini.
 
-    The API key is read securely from Streamlit Secrets so the
-    deployed dashboard does NOT depend on Google Gemini running on the
-    user's computer.
+    The API key is read securely from Streamlit Secrets. The function also
+    handles temporary Gemini 503 overloads with retries and a lightweight
+    fallback model, so public users do not need Ollama installed locally.
     """
 
     try:
         api_key = st.secrets["GEMINI_API_KEY"]
     except Exception:
         raise RuntimeError(
-            "GEMINI_API_KEY is missing. Add GEMINI_API_KEY = \"your_key\" "
-            "in Streamlit Cloud App settings -> Secrets."
+            'GEMINI_API_KEY is missing. Add GEMINI_API_KEY = "your_key" '
+            'in Streamlit Cloud App settings -> Secrets.'
         )
 
     api_key = str(api_key).strip()
@@ -683,47 +692,84 @@ def ask_ai(prompt):
             "GEMINI_API_KEY is empty. Add a valid Gemini API key in Streamlit Secrets."
         )
 
-    payload = {
-        "contents": [
-            {
-                "parts": [
-                    {
-                        "text": prompt
-                    }
-                ]
-            }
-        ]
-    }
+    last_503_message = None
 
-    response = requests.post(
-        GEMINI_API_URL,
-        params={"key": api_key},
-        json=payload,
-        timeout=120
-    )
+    for model_index, model_name in enumerate(GEMINI_MODELS):
+        api_url = (
+            "https://generativelanguage.googleapis.com/v1beta/"
+            f"models/{model_name}:generateContent"
+        )
 
-    if not response.ok:
-        try:
-            error_data = response.json()
-            error_message = error_data.get("error", {}).get(
-                "message",
-                response.text
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": prompt
+                        }
+                    ]
+                }
+            ]
+        }
+
+        # Retry temporary 503 service-overload responses.
+        for attempt in range(3):
+            try:
+                response = requests.post(
+                    api_url,
+                    params={"key": api_key},
+                    json=payload,
+                    timeout=120
+                )
+            except requests.exceptions.RequestException as exc:
+                if attempt < 2:
+                    import time
+                    time.sleep(2 ** attempt)
+                    continue
+                raise RuntimeError(f"Gemini connection error: {exc}")
+
+            if response.ok:
+                data = response.json()
+
+                try:
+                    return data["candidates"][0]["content"]["parts"][0]["text"]
+                except (KeyError, IndexError, TypeError):
+                    raise RuntimeError(
+                        "Gemini returned an unexpected response. Please try again."
+                    )
+
+            try:
+                error_data = response.json()
+                error_message = error_data.get("error", {}).get(
+                    "message",
+                    response.text
+                )
+            except Exception:
+                error_message = response.text
+
+            # 503 = temporary server overload. Retry, then move to fallback.
+            if response.status_code == 503:
+                last_503_message = error_message
+                if attempt < 2:
+                    import time
+                    time.sleep(2 ** attempt)
+                    continue
+                break
+
+            # For non-503 errors, do not hide the real problem.
+            raise RuntimeError(
+                f"Gemini API error ({response.status_code}): {error_message}"
             )
-        except Exception:
-            error_message = response.text
 
-        raise RuntimeError(
-            f"Gemini API error ({response.status_code}): {error_message}"
-        )
+        # If the primary model was overloaded, try the fallback model.
+        if model_index < len(GEMINI_MODELS) - 1:
+            continue
 
-    data = response.json()
-
-    try:
-        return data["candidates"][0]["content"]["parts"][0]["text"]
-    except (KeyError, IndexError, TypeError):
-        raise RuntimeError(
-            "Gemini returned an unexpected response. Please try again."
-        )
+    raise RuntimeError(
+        "Gemini is temporarily experiencing high demand. "
+        "The app retried automatically and the fallback model was also unavailable. "
+        "Please try Analyze with AI again in a few seconds."
+    )
 
 
 
