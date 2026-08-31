@@ -584,7 +584,7 @@ DATA_FILE = "Data/AI_Sales_Intelligence_Dataset.xlsx"
 
 GEMINI_API_URL = (
     "https://generativelanguage.googleapis.com/v1beta/"
-    "models/gemini-2.5-flash:generateContent"
+    "models/gemini-3.6-flash:generateContent"
 )
 
 
@@ -692,10 +692,7 @@ def ask_ai(prompt):
                     }
                 ]
             }
-        ],
-        "generationConfig": {
-            "temperature": 0.2
-        }
+        ]
     }
 
     response = requests.post(
