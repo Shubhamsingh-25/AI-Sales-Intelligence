@@ -9,8 +9,7 @@ The dashboard transforms sales data into actionable business insights through in
 👉 **[Open AI Sales Intelligence Dashboard](https://ai-sales-intelligence.streamlit.app/)**
 
 You can open the live dashboard directly in your browser without installing anything.
-
----
+![AI Sales Intelligence Dashboard](AI_Sales_dash.png)
 
 ## 📊 Dashboard Overview
 
