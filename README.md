@@ -164,8 +164,6 @@ Example:
 GEMINI_API_KEY = "YOUR_GEMINI_API_KEY"
 ```
 
-> ⚠️ Never publish your actual API key in GitHub, README files, screenshots or source code.
-
 ---
 
 ## 💡 How It Works
